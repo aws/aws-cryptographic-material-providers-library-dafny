@@ -22,8 +22,7 @@ jobs:
           StandardLibrary,
         ]
         os: [
-          # TODO just test on mac for now
-          # windows-latest,
+          windows-latest,
           ubuntu-latest,
           macos-latest
         ]
@@ -70,6 +69,7 @@ jobs:
 
       - name: Test ${{ matrix.library }}
         working-directory: ./${{ matrix.library }}
+        shell: bash
         run: |
           make test_java
 
