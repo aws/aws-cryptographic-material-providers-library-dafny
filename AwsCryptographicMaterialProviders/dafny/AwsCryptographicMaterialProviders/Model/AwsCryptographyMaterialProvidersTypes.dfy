@@ -57,6 +57,7 @@ module {:extern "software.amazon.cryptography.materialproviders.internaldafny.ty
       CreateAwsKmsRsaKeyring := [];
       CreateDefaultCryptographicMaterialsManager := [];
       CreateRequiredEncryptionContextCMM := [];
+      CreateCachingCMM := [];
       CreateCryptographicMaterialsCache := [];
       CreateDefaultClientSupplier := [];
       InitializeEncryptionMaterials := [];
@@ -85,6 +86,7 @@ module {:extern "software.amazon.cryptography.materialproviders.internaldafny.ty
     ghost var CreateAwsKmsRsaKeyring: seq<DafnyCallEvent<CreateAwsKmsRsaKeyringInput, Result<IKeyring, Error>>>
     ghost var CreateDefaultCryptographicMaterialsManager: seq<DafnyCallEvent<CreateDefaultCryptographicMaterialsManagerInput, Result<ICryptographicMaterialsManager, Error>>>
     ghost var CreateRequiredEncryptionContextCMM: seq<DafnyCallEvent<CreateRequiredEncryptionContextCMMInput, Result<ICryptographicMaterialsManager, Error>>>
+    ghost var CreateCachingCMM: seq<DafnyCallEvent<CreateCachingCMMInput, Result<ICryptographicMaterialsManager, Error>>>
     ghost var CreateCryptographicMaterialsCache: seq<DafnyCallEvent<CreateCryptographicMaterialsCacheInput, Result<ICryptographicMaterialsCache, Error>>>
     ghost var CreateDefaultClientSupplier: seq<DafnyCallEvent<CreateDefaultClientSupplierInput, Result<IClientSupplier, Error>>>
     ghost var InitializeEncryptionMaterials: seq<DafnyCallEvent<InitializeEncryptionMaterialsInput, Result<EncryptionMaterials, Error>>>
@@ -499,6 +501,41 @@ module {:extern "software.amazon.cryptography.materialproviders.internaldafny.ty
       ensures CreateRequiredEncryptionContextCMMEnsuresPublicly(input, output)
       ensures History.CreateRequiredEncryptionContextCMM == old(History.CreateRequiredEncryptionContextCMM) + [DafnyCallEvent(input, output)]
 
+    predicate CreateCachingCMMEnsuresPublicly(input: CreateCachingCMMInput , output: Result<ICryptographicMaterialsManager, Error>)
+    // The public method to be called by library consumers
+    method CreateCachingCMM ( input: CreateCachingCMMInput )
+      returns (output: Result<ICryptographicMaterialsManager, Error>)
+      requires
+        && ValidState()
+        && input.underlyingCMC.ValidState()
+        && input.underlyingCMC.Modifies !! {History} && ( input.underlyingCMM.Some? ==>
+                                                            && input.underlyingCMM.value.ValidState()
+                                                            && input.underlyingCMM.value.Modifies !! {History}
+           ) && ( input.keyring.Some? ==>
+                    && input.keyring.value.ValidState()
+                    && input.keyring.value.Modifies !! {History}
+           )
+      modifies Modifies - {History} ,
+               input.underlyingCMC.Modifies ,
+               (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) ,
+               (if input.keyring.Some? then input.keyring.value.Modifies else {}) ,
+               History`CreateCachingCMM
+      // Dafny will skip type parameters when generating a default decreases clause.
+      decreases Modifies - {History} ,
+                input.underlyingCMC.Modifies ,
+                (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) ,
+                (if input.keyring.Some? then input.keyring.value.Modifies else {})
+      ensures
+        && ValidState()
+        && fresh(input.underlyingCMC.Modifies - old(input.underlyingCMC.Modifies))
+        && ( output.Success? ==>
+               && output.value.ValidState()
+               && output.value.Modifies !! {History}
+               && fresh(output.value)
+               && fresh ( output.value.Modifies - Modifies - {History} - input.underlyingCMC.Modifies - (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) - (if input.keyring.Some? then input.keyring.value.Modifies else {}) ) )
+      ensures CreateCachingCMMEnsuresPublicly(input, output)
+      ensures History.CreateCachingCMM == old(History.CreateCachingCMM) + [DafnyCallEvent(input, output)]
+
     predicate CreateCryptographicMaterialsCacheEnsuresPublicly(input: CreateCryptographicMaterialsCacheInput , output: Result<ICryptographicMaterialsCache, Error>)
     // The public method to be called by library consumers
     method CreateCryptographicMaterialsCache ( input: CreateCryptographicMaterialsCacheInput )
@@ -811,6 +848,15 @@ module {:extern "software.amazon.cryptography.materialproviders.internaldafny.ty
     nameonly encryptionAlgorithm: ComAmazonawsKmsTypes.EncryptionAlgorithmSpec ,
     nameonly kmsClient: Option<ComAmazonawsKmsTypes.IKMSClient> ,
     nameonly grantTokens: Option<GrantTokenList>
+  )
+  datatype CreateCachingCMMInput = | CreateCachingCMMInput (
+    nameonly underlyingCMC: ICryptographicMaterialsCache ,
+    nameonly cacheLimitTtlSeconds: PositiveInteger ,
+    nameonly underlyingCMM: Option<ICryptographicMaterialsManager> ,
+    nameonly keyring: Option<IKeyring> ,
+    nameonly partitionKey: Option<Utf8Bytes> ,
+    nameonly limitBytes: Option<PositiveLong> ,
+    nameonly limitMessages: Option<PositiveInteger>
   )
   datatype CreateCryptographicMaterialsCacheInput = | CreateCryptographicMaterialsCacheInput (
     nameonly cache: CacheType
@@ -1208,14 +1254,14 @@ module {:extern "software.amazon.cryptography.materialproviders.internaldafny.ty
   )
   datatype GetCacheEntryInput = | GetCacheEntryInput (
     nameonly identifier: seq<uint8> ,
-    nameonly bytesUsed: Option<int64>
+    nameonly bytesUsed: Option<PositiveLong>
   )
   datatype GetCacheEntryOutput = | GetCacheEntryOutput (
     nameonly materials: Materials ,
     nameonly creationTime: PositiveLong ,
     nameonly expiryTime: PositiveLong ,
     nameonly messagesUsed: PositiveInteger ,
-    nameonly bytesUsed: PositiveInteger
+    nameonly bytesUsed: PositiveLong
   )
   datatype GetClientInput = | GetClientInput (
     nameonly region: Region
@@ -1409,7 +1455,7 @@ module {:extern "software.amazon.cryptography.materialproviders.internaldafny.ty
     nameonly creationTime: PositiveLong ,
     nameonly expiryTime: PositiveLong ,
     nameonly messagesUsed: Option<PositiveInteger> ,
-    nameonly bytesUsed: Option<PositiveInteger>
+    nameonly bytesUsed: Option<PositiveLong>
   )
   type Region = string
   type RegionList = seq<Region>
@@ -1436,7 +1482,7 @@ module {:extern "software.amazon.cryptography.materialproviders.internaldafny.ty
   type SymmetricSigningKeyList = seq<Secret>
   datatype UpdateUsageMetadataInput = | UpdateUsageMetadataInput (
     nameonly identifier: seq<uint8> ,
-    nameonly bytesUsed: PositiveInteger
+    nameonly bytesUsed: PositiveLong
   )
   type Utf8Bytes = ValidUTF8Bytes
   datatype ValidateCommitmentPolicyOnDecryptInput = | ValidateCommitmentPolicyOnDecryptInput (
@@ -1999,6 +2045,46 @@ abstract module AbstractAwsCryptographyMaterialProvidersService
       History.CreateRequiredEncryptionContextCMM := History.CreateRequiredEncryptionContextCMM + [DafnyCallEvent(input, output)];
     }
 
+    predicate CreateCachingCMMEnsuresPublicly(input: CreateCachingCMMInput , output: Result<ICryptographicMaterialsManager, Error>)
+    {Operations.CreateCachingCMMEnsuresPublicly(input, output)}
+    // The public method to be called by library consumers
+    method CreateCachingCMM ( input: CreateCachingCMMInput )
+      returns (output: Result<ICryptographicMaterialsManager, Error>)
+      requires
+        && ValidState()
+        && input.underlyingCMC.ValidState()
+        && input.underlyingCMC.Modifies !! {History} && ( input.underlyingCMM.Some? ==>
+                                                            && input.underlyingCMM.value.ValidState()
+                                                            && input.underlyingCMM.value.Modifies !! {History}
+           ) && ( input.keyring.Some? ==>
+                    && input.keyring.value.ValidState()
+                    && input.keyring.value.Modifies !! {History}
+           )
+      modifies Modifies - {History} ,
+               input.underlyingCMC.Modifies ,
+               (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) ,
+               (if input.keyring.Some? then input.keyring.value.Modifies else {}) ,
+               History`CreateCachingCMM
+      // Dafny will skip type parameters when generating a default decreases clause.
+      decreases Modifies - {History} ,
+                input.underlyingCMC.Modifies ,
+                (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) ,
+                (if input.keyring.Some? then input.keyring.value.Modifies else {})
+      ensures
+        && ValidState()
+        && fresh(input.underlyingCMC.Modifies - old(input.underlyingCMC.Modifies))
+        && ( output.Success? ==>
+               && output.value.ValidState()
+               && output.value.Modifies !! {History}
+               && fresh(output.value)
+               && fresh ( output.value.Modifies - Modifies - {History} - input.underlyingCMC.Modifies - (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) - (if input.keyring.Some? then input.keyring.value.Modifies else {}) ) )
+      ensures CreateCachingCMMEnsuresPublicly(input, output)
+      ensures History.CreateCachingCMM == old(History.CreateCachingCMM) + [DafnyCallEvent(input, output)]
+    {
+      output := Operations.CreateCachingCMM(config, input);
+      History.CreateCachingCMM := History.CreateCachingCMM + [DafnyCallEvent(input, output)];
+    }
+
     predicate CreateCryptographicMaterialsCacheEnsuresPublicly(input: CreateCryptographicMaterialsCacheInput , output: Result<ICryptographicMaterialsCache, Error>)
     {Operations.CreateCryptographicMaterialsCacheEnsuresPublicly(input, output)}
     // The public method to be called by library consumers
@@ -2505,6 +2591,38 @@ abstract module AbstractAwsCryptographyMaterialProvidersOperations {
              && fresh(output.value)
              && fresh ( output.value.Modifies - ModifiesInternalConfig(config) - (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) - (if input.keyring.Some? then input.keyring.value.Modifies else {}) ) )
     ensures CreateRequiredEncryptionContextCMMEnsuresPublicly(input, output)
+
+
+  predicate CreateCachingCMMEnsuresPublicly(input: CreateCachingCMMInput , output: Result<ICryptographicMaterialsManager, Error>)
+  // The private method to be refined by the library developer
+
+
+  method CreateCachingCMM ( config: InternalConfig , input: CreateCachingCMMInput )
+    returns (output: Result<ICryptographicMaterialsManager, Error>)
+    requires
+      && ValidInternalConfig?(config)
+      && input.underlyingCMC.ValidState() && ( input.underlyingCMM.Some? ==>
+                                                 && input.underlyingCMM.value.ValidState()
+         ) && ( input.keyring.Some? ==>
+                  && input.keyring.value.ValidState()
+         )
+    modifies ModifiesInternalConfig(config) ,
+             input.underlyingCMC.Modifies ,
+             (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) ,
+             (if input.keyring.Some? then input.keyring.value.Modifies else {})
+    // Dafny will skip type parameters when generating a default decreases clause.
+    decreases ModifiesInternalConfig(config) ,
+              input.underlyingCMC.Modifies ,
+              (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) ,
+              (if input.keyring.Some? then input.keyring.value.Modifies else {})
+    ensures
+      && ValidInternalConfig?(config)
+      && fresh(input.underlyingCMC.Modifies - old(input.underlyingCMC.Modifies))
+      && ( output.Success? ==>
+             && output.value.ValidState()
+             && fresh(output.value)
+             && fresh ( output.value.Modifies - ModifiesInternalConfig(config) - input.underlyingCMC.Modifies - (if input.underlyingCMM.Some? then input.underlyingCMM.value.Modifies else {}) - (if input.keyring.Some? then input.keyring.value.Modifies else {}) ) )
+    ensures CreateCachingCMMEnsuresPublicly(input, output)
 
 
   predicate CreateCryptographicMaterialsCacheEnsuresPublicly(input: CreateCryptographicMaterialsCacheInput , output: Result<ICryptographicMaterialsCache, Error>)
