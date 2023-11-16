@@ -22,6 +22,12 @@ public class KeyDescription {
 
   private final HierarchyKeyring Hierarchy;
 
+  private final MultiKeyring Multi;
+
+  private final RequiredEncryptionContextCMM RequiredEncryptionContext;
+
+  private final CachingCMM Caching;
+
   protected KeyDescription(BuilderImpl builder) {
     this.Kms = builder.Kms();
     this.KmsMrk = builder.KmsMrk();
@@ -31,6 +37,9 @@ public class KeyDescription {
     this.Static = builder.Static();
     this.KmsRsa = builder.KmsRsa();
     this.Hierarchy = builder.Hierarchy();
+    this.Multi = builder.Multi();
+    this.RequiredEncryptionContext = builder.RequiredEncryptionContext();
+    this.Caching = builder.Caching();
   }
 
   public KMSInfo Kms() {
@@ -63,6 +72,18 @@ public class KeyDescription {
 
   public HierarchyKeyring Hierarchy() {
     return this.Hierarchy;
+  }
+
+  public MultiKeyring Multi() {
+    return this.Multi;
+  }
+
+  public RequiredEncryptionContextCMM RequiredEncryptionContext() {
+    return this.RequiredEncryptionContext;
+  }
+
+  public CachingCMM Caching() {
+    return this.Caching;
   }
 
   public Builder toBuilder() {
@@ -106,6 +127,18 @@ public class KeyDescription {
 
     HierarchyKeyring Hierarchy();
 
+    Builder Multi(MultiKeyring Multi);
+
+    MultiKeyring Multi();
+
+    Builder RequiredEncryptionContext(RequiredEncryptionContextCMM RequiredEncryptionContext);
+
+    RequiredEncryptionContextCMM RequiredEncryptionContext();
+
+    Builder Caching(CachingCMM Caching);
+
+    CachingCMM Caching();
+
     KeyDescription build();
   }
 
@@ -126,6 +159,12 @@ public class KeyDescription {
 
     protected HierarchyKeyring Hierarchy;
 
+    protected MultiKeyring Multi;
+
+    protected RequiredEncryptionContextCMM RequiredEncryptionContext;
+
+    protected CachingCMM Caching;
+
     protected BuilderImpl() {
     }
 
@@ -138,6 +177,9 @@ public class KeyDescription {
       this.Static = model.Static();
       this.KmsRsa = model.KmsRsa();
       this.Hierarchy = model.Hierarchy();
+      this.Multi = model.Multi();
+      this.RequiredEncryptionContext = model.RequiredEncryptionContext();
+      this.Caching = model.Caching();
     }
 
     public Builder Kms(KMSInfo Kms) {
@@ -212,6 +254,34 @@ public class KeyDescription {
       return this.Hierarchy;
     }
 
+    public Builder Multi(MultiKeyring Multi) {
+      this.Multi = Multi;
+      return this;
+    }
+
+    public MultiKeyring Multi() {
+      return this.Multi;
+    }
+
+    public Builder RequiredEncryptionContext(
+        RequiredEncryptionContextCMM RequiredEncryptionContext) {
+      this.RequiredEncryptionContext = RequiredEncryptionContext;
+      return this;
+    }
+
+    public RequiredEncryptionContextCMM RequiredEncryptionContext() {
+      return this.RequiredEncryptionContext;
+    }
+
+    public Builder Caching(CachingCMM Caching) {
+      this.Caching = Caching;
+      return this;
+    }
+
+    public CachingCMM Caching() {
+      return this.Caching;
+    }
+
     public KeyDescription build() {
       if (!onlyOneNonNull()) {
         throw new IllegalArgumentException("`KeyDescription` is a Union. A Union MUST have one and only one value set.");
@@ -220,7 +290,7 @@ public class KeyDescription {
     }
 
     private boolean onlyOneNonNull() {
-      Object[] allValues = {this.Kms, this.KmsMrk, this.KmsMrkDiscovery, this.RSA, this.AES, this.Static, this.KmsRsa, this.Hierarchy};
+      Object[] allValues = {this.Kms, this.KmsMrk, this.KmsMrkDiscovery, this.RSA, this.AES, this.Static, this.KmsRsa, this.Hierarchy, this.Multi, this.RequiredEncryptionContext, this.Caching};
       boolean haveOneNonNull = false;
       for (Object o : allValues) {
         if (Objects.nonNull(o)) {

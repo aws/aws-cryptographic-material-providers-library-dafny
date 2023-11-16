@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 include "LibraryIndex.dfy"
-include "CreateKeyrings.dfy"
 include "../../KeyVectors/src/Index.dfy"
 
 module {:options "-functionSyntax:4"} TestVectors {
   import Types = AwsCryptographyMaterialProvidersTypes
   import WrappedMaterialProviders
+  import Seq
 
   import opened Wrappers
   import opened StandardLibrary.UInt
@@ -33,7 +33,7 @@ module {:options "-functionSyntax:4"} TestVectors {
     requires test.cmm.ValidState()
     modifies test.cmm.Modifies
     ensures test.cmm.ValidState()
-    ensures testResult && test.vector.PositiveEncryptKeyringVector? ==> materials.Some?
+    ensures testResult && !test.vector.NegativeEncryptKeyringVector? ==> materials.Some?
   {
     print "\nTEST===> ",
           test.vector.name,
@@ -43,18 +43,20 @@ module {:options "-functionSyntax:4"} TestVectors {
     var result := test.cmm.GetEncryptionMaterials(test.input);
 
     testResult := match test.vector
-      case PositiveEncryptKeyringVector(_,_,_,_,_,_,_,_,_)
+      case PositiveEncryptKeyringVector(_,_,_,_,_,_,_,_,_,_)
+        => result.Success?
+      case PositiveEncryptNegativeDecryptKeyringVector(_,_,_,_,_,_,_,_,_,_,_)
         => result.Success?
       case NegativeEncryptKeyringVector(_,_,_,_,_,_,_,_,_)
         => !result.Success?;
 
-    materials := if test.vector.PositiveEncryptKeyringVector? && result.Success? then
+    materials := if testResult && result.Success? then
       Some(result.value.encryptionMaterials)
     else
       None;
 
     if !testResult {
-      if test.vector.PositiveEncryptKeyringVector? {
+      if test.vector.PositiveEncryptKeyringVector? || test.vector.PositiveEncryptNegativeDecryptKeyringVector? {
         print result.error;
       }
       print "\nFAILED! <-----------\n";
@@ -76,7 +78,6 @@ module {:options "-functionSyntax:4"} TestVectors {
 
     output := match test.vector
       case PositiveDecryptKeyringTest(_,_,_,_,_,_,_,_,_)
-        // TODO need to verify the ouput. E.g. is the PTDK correct?
         =>
         && result.Success?
         && result.value.decryptionMaterials.plaintextDataKey == test.vector.expectedResult.plaintextDataKey
@@ -103,47 +104,45 @@ module {:options "-functionSyntax:4"} TestVectors {
               && fresh(output.value.cmm.Modifies)
   {
     var input := match vector
-      case PositiveEncryptKeyringVector(
-        _,_,
-        encryptionContext, commitmentPolicy, algorithmSuite, maxPlaintextLength, requiredEncryptionContextKeys,
-        _,_
-        ) =>
+      case PositiveEncryptKeyringVector(_,_,_,_,_,_,_,_,_,_) =>
         Types.GetEncryptionMaterialsInput(
-          encryptionContext := encryptionContext,
-          commitmentPolicy := commitmentPolicy,
-          algorithmSuiteId := Some(algorithmSuite.id),
-          maxPlaintextLength := maxPlaintextLength,
-          requiredEncryptionContextKeys := requiredEncryptionContextKeys
+          encryptionContext := vector.encryptionContext,
+          commitmentPolicy := vector.commitmentPolicy,
+          algorithmSuiteId := Some(vector.algorithmSuite.id),
+          maxPlaintextLength := vector.maxPlaintextLength,
+          requiredEncryptionContextKeys := vector.requiredEncryptionContextKeys
         )
-      case NegativeEncryptKeyringVector(
-        _,_,
-        encryptionContext, commitmentPolicy, algorithmSuite, maxPlaintextLength, requiredEncryptionContextKeys,
-        _, _
-        ) =>
+      case NegativeEncryptKeyringVector(_,_,_,_,_,_,_,_, _) =>
         Types.GetEncryptionMaterialsInput(
-          encryptionContext := encryptionContext,
-          commitmentPolicy := commitmentPolicy,
-          algorithmSuiteId := Some(algorithmSuite.id),
-          maxPlaintextLength := maxPlaintextLength,
-          requiredEncryptionContextKeys := requiredEncryptionContextKeys
+          encryptionContext := vector.encryptionContext,
+          commitmentPolicy := vector.commitmentPolicy,
+          algorithmSuiteId := Some(vector.algorithmSuite.id),
+          maxPlaintextLength := vector.maxPlaintextLength,
+          requiredEncryptionContextKeys := vector.requiredEncryptionContextKeys
+        )
+      case PositiveEncryptNegativeDecryptKeyringVector(_,_,_,_,_,_,_,_,_,_,_) =>
+        Types.GetEncryptionMaterialsInput(
+          encryptionContext := vector.encryptionContext,
+          commitmentPolicy := vector.commitmentPolicy,
+          algorithmSuiteId := Some(vector.algorithmSuite.id),
+          maxPlaintextLength := vector.maxPlaintextLength,
+          requiredEncryptionContextKeys := vector.requiredEncryptionContextKeys
         );
+
 
     var mpl :- expect WrappedMaterialProviders.WrappedMaterialProviders();
 
-    var maybeKeyring := keys.CreateWappedTestVectorKeyring(
-      KeyVectorsTypes.TestVectorKeyringInput(
+    var cmm' := keys.CreateWrappedTestVectorCmm(
+      KeyVectorsTypes.TestVectorCmmInput(
         keyDescription := if vector.PositiveEncryptKeyringVector? then
           vector.encryptDescription
+        else if vector.PositiveEncryptNegativeDecryptKeyringVector? then
+          vector.encryptDescription
         else
-          vector.keyDescription
+          vector.keyDescription,
+        forOperation := KeyVectorsTypes.ENCRYPT
       ));
-    var keyring :- maybeKeyring.MapFailure((e: KeyVectorsTypes.Error) => var _ := printErr(e); "Keyring failure");
-
-    var maybeCmm := mpl
-    .CreateDefaultCryptographicMaterialsManager(
-      Types.CreateDefaultCryptographicMaterialsManagerInput( keyring := keyring )
-    );
-    var cmm :- maybeCmm.MapFailure(e => "CMM failure");
+    var cmm :- cmm'.MapFailure((e: KeyVectorsTypes.Error) => var _ := printErr(e); "Cmm failure");
 
     return Success(EncryptTest(
                      input := input,
@@ -154,7 +153,7 @@ module {:options "-functionSyntax:4"} TestVectors {
 
   method ToDecryptTest(keys: KeyVectors.KeyVectorsClient, test: EncryptTest, materials: Types.EncryptionMaterials)
     returns (output: Result<DecryptTest, string>)
-    requires test.vector.PositiveEncryptKeyringVector?
+    requires test.vector.PositiveEncryptKeyringVector? || test.vector.PositiveEncryptNegativeDecryptKeyringVector?
     requires keys.ValidState()
     modifies keys.Modifies
     ensures keys.ValidState()
@@ -163,50 +162,63 @@ module {:options "-functionSyntax:4"} TestVectors {
               && fresh(output.value.cmm.Modifies)
   {
 
-    // TODO remove requiredEncryptionContextKeys, and add to reproducedEncryptionContext
-    var reproducedEncryptionContext := None;
-    var input := Types.DecryptMaterialsInput(
-      algorithmSuiteId := materials.algorithmSuite.id,
-      commitmentPolicy := test.vector.commitmentPolicy,
-      encryptedDataKeys := materials.encryptedDataKeys,
-      encryptionContext := materials.encryptionContext,
-      reproducedEncryptionContext := reproducedEncryptionContext
-    );
+    // It is important to remove these keys
+    // since the contract is that they MUST be reproduced!
+    var keysToRemove := Seq.ToSet(test.vector.requiredEncryptionContextKeys.UnwrapOr([]));
+    var vector := match test.vector
+      case PositiveEncryptKeyringVector(_, _,_, _, _, _, _,_,_, _) =>
+        PositiveDecryptKeyringTest(
+          name := test.vector.name + "->Decryption",
+          algorithmSuite := test.vector.algorithmSuite,
+          commitmentPolicy := test.vector.commitmentPolicy,
+          encryptedDataKeys := materials.encryptedDataKeys,
+          // The verification key will only exist on the materials.
+          // The expectation is that test.vector.encryptionContext.Items <= materials.encryptionContext.Items
+          encryptionContext := materials.encryptionContext - keysToRemove,
+          keyDescription := test.vector.decryptDescription,
+          expectedResult := DecryptResult(
+            plaintextDataKey := materials.plaintextDataKey,
+            // PositiveDecryptKeyringTest only supports automatic creation from a single Encrypt vector
+            symmetricSigningKey := if materials.symmetricSigningKeys.Some? && 0 < |materials.symmetricSigningKeys.value| then
+              Some(materials.symmetricSigningKeys.value[0]) else None,
+            requiredEncryptionContextKeys := test.vector.requiredEncryptionContextKeys.UnwrapOr([])
+          ),
+          description := if test.vector.description.Some? then
+            Some("Decryption for " + test.vector.description.value)
+          else None,
+          reproducedEncryptionContext := test.vector.reproducedEncryptionContext
+        )
+      case PositiveEncryptNegativeDecryptKeyringVector(_, _,_, _, _, _, _,_,_,_, _) =>
+        NegativeDecryptKeyringTest(
+          name := test.vector.name + "->Decryption",
+          algorithmSuite := test.vector.algorithmSuite,
+          commitmentPolicy := test.vector.commitmentPolicy,
+          encryptedDataKeys := materials.encryptedDataKeys,
+          encryptionContext := test.vector.encryptionContext - keysToRemove,
+          keyDescription := test.vector.decryptDescription,
+          errorDescription := test.vector.decryptErrorDescription,
+          description := if test.vector.description.Some? then
+            Some("Decryption for " + test.vector.description.value)
+          else None,
+          reproducedEncryptionContext := test.vector.reproducedEncryptionContext
+        );
 
-    var vector := PositiveDecryptKeyringTest(
-      name := test.vector.name + "->Decryption",
-      algorithmSuite := materials.algorithmSuite,
-      commitmentPolicy := test.vector.commitmentPolicy,
-      encryptedDataKeys := materials.encryptedDataKeys,
-      encryptionContext := materials.encryptionContext,
-      keyDescription := test.vector.decryptDescription,
-      expectedResult := DecryptResult(
-        plaintextDataKey := materials.plaintextDataKey,
-        // PositiveDecryptKeyringTest only supports automatic creation from a single Encrypt vector
-        symmetricSigningKey := if materials.symmetricSigningKeys.Some? && 0 < |materials.symmetricSigningKeys.value| then
-          Some(materials.symmetricSigningKeys.value[0]) else None,
-        requiredEncryptionContextKeys := materials.requiredEncryptionContextKeys
-      ),
-      description := if test.vector.description.Some? then
-        Some("Decryption for " + test.vector.description.value)
-      else None,
-      reproducedEncryptionContext := reproducedEncryptionContext
+    var input := Types.DecryptMaterialsInput(
+      algorithmSuiteId := vector.algorithmSuite.id,
+      commitmentPolicy := vector.commitmentPolicy,
+      encryptedDataKeys := vector.encryptedDataKeys,
+      encryptionContext := vector.encryptionContext,
+      reproducedEncryptionContext := vector.reproducedEncryptionContext
     );
 
     var mpl :- expect WrappedMaterialProviders.WrappedMaterialProviders();
 
-    var maybeKeyring := keys.CreateWappedTestVectorKeyring(
-      KeyVectorsTypes.TestVectorKeyringInput(
-        keyDescription := vector.keyDescription
-      )
-    );
-    var keyring :- maybeKeyring.MapFailure((e: KeyVectorsTypes.Error) => var _ := printErr(e); "Keyring failure");
-
-    var maybeCmm := mpl
-    .CreateDefaultCryptographicMaterialsManager(
-      Types.CreateDefaultCryptographicMaterialsManagerInput( keyring := keyring )
-    );
-    var cmm :- maybeCmm.MapFailure(e => "CMM failure");
+    var cmm' := keys.CreateWrappedTestVectorCmm(
+      KeyVectorsTypes.TestVectorCmmInput(
+        keyDescription := vector.keyDescription,
+        forOperation := KeyVectorsTypes.DECRYPT
+      ));
+    var cmm :- cmm'.MapFailure((e: KeyVectorsTypes.Error) => var _ := printErr(e); "Cmm failure");
 
     return Success(DecryptTest(
                      input := input,
@@ -230,7 +242,23 @@ module {:options "-functionSyntax:4"} TestVectors {
         maxPlaintextLength: Option<UInt.int64>,
         requiredEncryptionContextKeys: Option<Types.EncryptionContextKeys>,
         encryptDescription: KeyVectorsTypes.KeyDescription,
-        decryptDescription: KeyVectorsTypes.KeyDescription
+        decryptDescription: KeyVectorsTypes.KeyDescription,
+        reproducedEncryptionContext: Option<Types.EncryptionContext>
+      )
+    | PositiveEncryptNegativeDecryptKeyringVector(
+        name: string,
+        description: Option<string>,
+        encryptionContext: Types.EncryptionContext,
+        commitmentPolicy: Types.CommitmentPolicy,
+        // algorithmSuiteId is NOT an option
+        // because test vectors are not the place to test defaults
+        algorithmSuite: Types.AlgorithmSuiteInfo,
+        maxPlaintextLength: Option<UInt.int64>,
+        requiredEncryptionContextKeys: Option<Types.EncryptionContextKeys>,
+        decryptErrorDescription: string,
+        encryptDescription: KeyVectorsTypes.KeyDescription,
+        decryptDescription: KeyVectorsTypes.KeyDescription,
+        reproducedEncryptionContext: Option<Types.EncryptionContext>
       )
     | NegativeEncryptKeyringVector(
         name: string,
@@ -245,8 +273,6 @@ module {:options "-functionSyntax:4"} TestVectors {
         errorDescription: string,
         keyDescription: KeyVectorsTypes.KeyDescription
       )
-      // | PositiveEncryptCMMTest
-      // | NegativeEncryptCMMTest
 
   datatype DecryptTestVector =
     | PositiveDecryptKeyringTest(
@@ -257,8 +283,8 @@ module {:options "-functionSyntax:4"} TestVectors {
         encryptionContext: Types.EncryptionContext,
         keyDescription: KeyVectorsTypes.KeyDescription,
         expectedResult: DecryptResult,
-        description: Option<string> := None,
-        reproducedEncryptionContext: Option<Types.EncryptionContext> := None
+        description: Option<string>,
+        reproducedEncryptionContext: Option<Types.EncryptionContext>
       )
     | NegativeDecryptKeyringTest(
         name: string,
@@ -268,11 +294,9 @@ module {:options "-functionSyntax:4"} TestVectors {
         encryptionContext: Types.EncryptionContext,
         errorDescription: string,
         keyDescription: KeyVectorsTypes.KeyDescription,
-        reproducedEncryptionContext: Option<Types.EncryptionContext> := None,
-        description: Option<string> := None
+        reproducedEncryptionContext: Option<Types.EncryptionContext>,
+        description: Option<string>
       )
-      // | PositiveDecryptCMMTest
-      // | NegativeDecryptCMMTest
 
 
   datatype DecryptResult = DecryptResult(

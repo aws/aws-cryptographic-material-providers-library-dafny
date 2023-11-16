@@ -22,7 +22,7 @@ module {:options "-functionSyntax:4"} TestManifests {
 
   method  {:options "-functionSyntax:4"} StartEncrypt(
     encryptManifestPath: string,
-    keysManifiestPath: string
+    keysManifestPath: string
   )
   {
     var encryptManifestBv :- expect FileIO.ReadBytesFromFile(encryptManifestPath);
@@ -31,7 +31,7 @@ module {:options "-functionSyntax:4"} TestManifests {
     expect encryptManifestJSON.Object?;
 
     var keys :- expect KeyVectors.KeyVectors(KeyVectorsTypes.KeyVectorsConfig(
-                                               keyManifiestPath := keysManifiestPath
+                                               keyManifestPath := keysManifestPath
                                              ));
 
     var jsonTests :- expect GetObject("tests", encryptManifestJSON.obj);
@@ -57,7 +57,7 @@ module {:options "-functionSyntax:4"} TestManifests {
   {
     var hasFailure := false;
 
-    print "\n=================== Starting Encrypt Tests =================== \n\n";
+    print "\n=================== Starting ", |tests|, " Encrypt Tests =================== \n\n";
 
     var decryptableTests: seq<(TestVectors.EncryptTest, Types.EncryptionMaterials)> := [];
 
@@ -67,14 +67,14 @@ module {:options "-functionSyntax:4"} TestManifests {
       var test := tests[i];
       var pass, maybeEncryptionMaterials := TestVectors.TestGetEncryptionMaterials(test);
 
-      if pass && test.vector.PositiveEncryptKeyringVector? {
+      if pass && !test.vector.NegativeEncryptKeyringVector? {
         decryptableTests := decryptableTests + [(test, maybeEncryptionMaterials.value)];
       } else if !pass {
         hasFailure := true;
       }
     }
 
-    print "\n=================== Completed Encrypt Tests =================== \n\n";
+    print "\n=================== Completed ", |tests|, " Encrypt Tests =================== \n\n";
 
     expect !hasFailure;
     output :- expect ToDecryptTests(keys, decryptableTests);
@@ -87,7 +87,7 @@ module {:options "-functionSyntax:4"} TestManifests {
     ensures forall t <- tests :: t.cmm.ValidState()
   {
 
-    print "\n=================== Starting Decrypt Tests =================== \n\n";
+    print "\n=================== Starting ", |tests|, " Decrypt Tests =================== \n\n";
 
     var hasFailure := false;
 
@@ -99,11 +99,11 @@ module {:options "-functionSyntax:4"} TestManifests {
         hasFailure := true;
       }
     }
-    print "\n=================== Completed Decrypt Tests =================== \n\n";
+    print "\n=================== Completed ", |tests|, " Decrypt Tests =================== \n\n";
 
     expect !hasFailure;
 
-    manifest := ToJSONDecryptManifiest(tests);
+    manifest := ToJSONDecryptManifest(tests);
   }
 
   method ToEncryptTests(keys: KeyVectors.KeyVectorsClient, encryptVectors: seq<TestVectors.EncryptTestVector>)
@@ -140,26 +140,26 @@ module {:options "-functionSyntax:4"} TestManifests {
                 && fresh(t.cmm.Modifies)
   {
 
-    var positiveEncryptTests := Seq.Filter(
+    var successfulEncrypt := Seq.Filter(
       (r: (TestVectors.EncryptTest, Types.EncryptionMaterials)) =>
-        r.0.vector.PositiveEncryptKeyringVector?,
+        r.0.vector.PositiveEncryptKeyringVector? || r.0.vector.PositiveEncryptNegativeDecryptKeyringVector?,
       tests
     );
 
     var decryptTests: seq<TestVectors.DecryptTest> := [];
-    for i := 0 to |positiveEncryptTests|
+    for i := 0 to |successfulEncrypt|
       invariant forall t <- decryptTests ::
           && t.cmm.ValidState()
           && fresh(t.cmm.Modifies)
     {
-      var test :- TestVectors.ToDecryptTest(keys, positiveEncryptTests[i].0, positiveEncryptTests[i].1);
+      var test :- TestVectors.ToDecryptTest(keys, successfulEncrypt[i].0, successfulEncrypt[i].1);
       decryptTests := decryptTests + [test];
     }
 
     return Success(decryptTests);
   }
 
-  function ToJSONDecryptManifiest(tests: seq<TestVectors.DecryptTest>)
+  function ToJSONDecryptManifest(tests: seq<TestVectors.DecryptTest>)
     : seq<BoundedInts.byte>
   {
     []

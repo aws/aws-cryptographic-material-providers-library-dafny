@@ -11,7 +11,8 @@ service KeyVectors {
   resources: [],
   operations: [
     CreateTestVectorKeyring,
-    CreateWappedTestVectorKeyring,
+    CreateWrappedTestVectorKeyring,
+    CreateWrappedTestVectorCmm,
     GetKeyDescription,
     SerializeKeyDescription,
   ]
@@ -19,7 +20,7 @@ service KeyVectors {
 
 structure KeyVectorsConfig {
   @required
-  keyManifiestPath: String
+  keyManifestPath: String
 }
 
 operation CreateTestVectorKeyring {
@@ -27,9 +28,39 @@ operation CreateTestVectorKeyring {
   output: aws.cryptography.materialProviders#CreateKeyringOutput,
 }
 
-operation CreateWappedTestVectorKeyring {
+operation CreateWrappedTestVectorKeyring {
   input: TestVectorKeyringInput,
   output: aws.cryptography.materialProviders#CreateKeyringOutput,
+}
+
+operation CreateWrappedTestVectorCmm {
+  input: TestVectorCmmInput,
+  output: CreateWrappedTestVectorCmmOutput,
+}
+
+structure TestVectorCmmInput {
+  @required
+  keyDescription: KeyDescription,
+  @required
+  forOperation: CmmOperation,
+}
+
+@enum([
+  {
+    name: "ENCRYPT",
+    value: "ENCRYPT",
+  },
+  {
+    name: "DECRYPT",
+    value: "DECRYPT",
+  },
+])
+string CmmOperation
+
+@aws.polymorph#positional
+structure CreateWrappedTestVectorCmmOutput {
+  @required
+  cmm: aws.cryptography.materialProviders#CryptographicMaterialsManagerReference,
 }
 
 @readonly
@@ -62,10 +93,9 @@ structure SerializeKeyDescriptionOutput {
   json: Blob
 }
 
-
 structure TestVectorKeyringInput {
   @required
-  keyDescription: KeyDescription
+  keyDescription: KeyDescription,
 }
 
 union KeyDescription {
@@ -77,6 +107,9 @@ union KeyDescription {
   Static: StaticKeyring,
   KmsRsa: KmsRsaKeyring,
   Hierarchy: HierarchyKeyring,
+  Multi: MultiKeyring,
+  RequiredEncryptionContext: RequiredEncryptionContextCMM,
+  Caching: CachingCMM,
 }
 
 structure KMSInfo {
@@ -125,6 +158,35 @@ structure HierarchyKeyring {
   keyId: String,
 }
 
+structure MultiKeyring {
+  generator: KeyDescription,
+  @required
+  childKeyrings: KeyDescriptionList,
+}
+
+list KeyDescriptionList {
+  member: KeyDescription
+}
+
+structure RequiredEncryptionContextCMM {
+  @required
+  underlying: KeyDescription,
+  @required
+  requiredEncryptionContextKeys: aws.cryptography.materialProviders#EncryptionContextKeys
+}
+
+structure CachingCMM {
+  @required
+  underlying: KeyDescription,
+  @required
+  cacheLimitTtlSeconds: aws.cryptography.materialProviders#PositiveInteger,
+  limitBytes: aws.cryptography.materialProviders#PositiveLong,
+  limitMessages: aws.cryptography.materialProviders#PositiveInteger,
+  @aws.polymorph#javadoc("The entry identifier for get. The cache entry values are set on creation. Use the limits on the CMM to control behavior.")
+  getEntryIdentifier: Blob,
+  @aws.polymorph#javadoc("The entry identifier for put. The cache entry values are set on creation. Use the limits on the CMM to control behavior.")
+  putEntryIdentifier: Blob,
+}
 
 @error("client")
 structure KeyVectorException {
