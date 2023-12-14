@@ -215,5 +215,12 @@ namespace AWS.Cryptography.MaterialProviders
       if (result.is_Failure) throw TypeConversion.FromDafny_CommonError(result.dtor_error);
 
     }
+    public AWS.Cryptography.Primitives.GetHKDFProviderOutput GetHKDFProvider(AWS.Cryptography.Primitives.GetHKDFProviderInput input)
+    {
+      software.amazon.cryptography.primitives.internaldafny.types._IGetHKDFProviderInput internalInput = TypeConversion.ToDafny_N3_aws__N12_cryptography__N10_primitives__S20_GetHKDFProviderInput(input);
+      Wrappers_Compile._IResult<software.amazon.cryptography.primitives.internaldafny.types._IGetHKDFProviderOutput, software.amazon.cryptography.materialproviders.internaldafny.types._IError> result = _impl.GetHKDFProvider(internalInput);
+      if (result.is_Failure) throw TypeConversion.FromDafny_CommonError(result.dtor_error);
+      return TypeConversion.FromDafny_N3_aws__N12_cryptography__N10_primitives__S21_GetHKDFProviderOutput(result.dtor_value);
+    }
   }
 }

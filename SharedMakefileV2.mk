@@ -244,6 +244,7 @@ _polymorph:
 	--dependent-model $(PROJECT_ROOT)/$(SMITHY_DEPS) \
 	$(patsubst %, --dependent-model $(PROJECT_ROOT)/%/Model, $($(service_deps_var))) \
 	--namespace $($(namespace_var)) \
+	--dafny-version 4.2.0 \
 	$(AWS_SDK_CMD) \
 	$(OUTPUT_LOCAL_SERVICE_$(SERVICE)) \
 	";
@@ -387,7 +388,7 @@ mvn_local_deploy_dependencies:
 
 # The Java MUST all exist already through the transpile step.
 mvn_local_deploy:
-	./runtimes/java/gradlew -p runtimes/java publishMavenLocalPublicationToMavenLocal 
+	./runtimes/java/gradlew -p runtimes/java publishMavenPublicationToMavenLocal
 
 # The Java MUST all exsist if we want to publish to CodeArtifact
 mvn_ca_deploy:

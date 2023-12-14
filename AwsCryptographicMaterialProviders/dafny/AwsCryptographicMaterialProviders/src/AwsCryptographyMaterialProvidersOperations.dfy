@@ -560,6 +560,16 @@ module AwsCryptographyMaterialProvidersOperations refines AbstractAwsCryptograph
     return Success(clientSupplier);
   }
 
+  predicate GetHKDFProviderEnsuresPublicly(input: AwsCryptographyPrimitivesTypes.GetHKDFProviderInput , output: Result<AwsCryptographyPrimitivesTypes.GetHKDFProviderOutput, Error>)
+  {true}
+
+  method GetHKDFProvider ( config: InternalConfig , input: AwsCryptographyPrimitivesTypes.GetHKDFProviderInput )
+    returns (output: Result<AwsCryptographyPrimitivesTypes.GetHKDFProviderOutput, Error>)
+  {
+    var res := config.crypto.GetHKDFProvider(input);
+    output := res.MapFailure(e => Types.AwsCryptographyPrimitives(e));
+  }
+
   function method InitializeEncryptionMaterials ( config: InternalConfig,  input: InitializeEncryptionMaterialsInput )
     : (output: Result<EncryptionMaterials, Error>)
   {

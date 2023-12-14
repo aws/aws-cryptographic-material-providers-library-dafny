@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 CORES=2
+# Default to SNAPSHOT
+PUBLISHED_VERSION="1.0-SNAPSHOT"
 
 include ../SharedMakefileV2.mk
 
@@ -44,3 +46,17 @@ SERVICE_DEPS_AwsCryptographyKeyStore := \
 	ComAmazonawsDynamodb \
 	AwsCryptographicMaterialProviders/dafny/AwsCryptographicMaterialProviders \
 
+format_net:
+	pushd runtimes/net && dotnet format && popd
+
+mvn_local_deploy:
+	./runtimes/java/gradlew -p runtimes/java publishMavenPublicationToMavenLocal \
+	-PpublishedVersion=$(PUBLISHED_VERSION)
+
+maven_ca_deploy:
+	./runtimes/java/gradlew -p runtimes/java publishMavenPublicationToPublishToCodeArtifactCIRepository \
+	-PpublishedVersion=$(PUBLISHED_VERSION)
+
+mvn_staging_deploy:
+	./runtimes/java/gradlew -p runtimes/java publishMavenPublicationToPublishToCodeArtifactStagingRepository \
+	-PpublishedVersion=$(PUBLISHED_VERSION)

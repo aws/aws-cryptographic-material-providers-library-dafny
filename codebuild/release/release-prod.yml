@@ -6,6 +6,9 @@ version: 0.2
 env:
   variables:
     BRANCH: "main"
+    VERSION: "1.0.2"
+    JAVA_ENV_VERSION: corretto8
+    JAVA_NUMERIC_VERSION: 8
   parameter-store:
     ACCOUNT: /CodeBuild/AccountId
   secrets-manager:
@@ -17,7 +20,7 @@ env:
 phases:
   install:
     runtime-versions:
-      java: corretto8
+      java: $JAVA_ENV_VERSION
     commands:
       - cd ..
       # Get Dafny
@@ -52,16 +55,16 @@ phases:
     commands:
       - cd AwsCryptographicMaterialProviders/
       # Build and deploy to maven local
-      - make build_java && make mvn_local_deploy
+      - make build_java && make PUBLISHED_VERSION=$VERSION mvn_local_deploy
       # Before publishing, test local jar
       # Since we just deployed to mvn local we will not pull down from CA
       - cd ../TestVectorsAwsCryptographicMaterialProviders/
       # transpile the code only for this project
       - make transpile_implementation_java
       - make transpile_test_java
-      - make test_java
+      - make PUBLISHED_VERSION=$VERSION test_java
       - cd ../AwsCryptographicMaterialProviders/
 
       # Publish to Sonatype
-      - gradle -p runtimes/java publishMavenPublicationToSonatypeRepository closeSonatypeStagingRepository
-      - gradle -p runtimes/java findSonatypeStagingRepository releaseSonatypeStagingRepository
+      - gradle -p runtimes/java publishMavenPublicationToSonatypeRepository -PpublishedVersion=$VERSION closeSonatypeStagingRepository -PpublishedVersion=$VERSION
+      - gradle -p runtimes/java findSonatypeStagingRepository -PpublishedVersion=$VERSION releaseSonatypeStagingRepository -PpublishedVersion=$VERSION

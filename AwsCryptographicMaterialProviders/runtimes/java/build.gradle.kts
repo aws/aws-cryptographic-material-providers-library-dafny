@@ -1,8 +1,10 @@
-import java.io.File
-import java.io.FileInputStream
-import java.util.Properties
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 import java.net.URI
-import javax.annotation.Nullable
+
+val publishedVersion: String by project
+val verboseTesting: Boolean by project
+val accpLocalJar: String by project
 
 plugins {
     `java-library`
@@ -10,15 +12,12 @@ plugins {
     `signing`
     id("com.github.johnrengelman.shadow") version "7.1.2"
     id("io.github.gradle-nexus.publish-plugin") version "1.3.0"
+    // OS Detector for Optional ACCP
+    id("com.google.osdetector") version "1.7.0"
 }
-
-var props = Properties().apply {
-    load(FileInputStream(File(rootProject.rootDir, "../../../project.properties")))
-}
-var dafnyVersion = props.getProperty("dafnyVersion")
 
 group = "software.amazon.cryptography"
-version = "1.0.2"
+version = if (project.hasProperty("publishedVersion")) publishedVersion else "1.0-SNAPSHOT"
 description = "AWS Cryptographic Material Providers Library"
 
 java {
@@ -33,33 +32,9 @@ java {
     withSourcesJar()
 }
 
-var caUrl: URI? = null
-@Nullable
-val caUrlStr: String? = System.getenv("CODEARTIFACT_URL_JAVA_CONVERSION")
-if (!caUrlStr.isNullOrBlank()) {
-    caUrl = URI.create(caUrlStr)
-}
-
-var caPassword: String? = null
-@Nullable
-val caPasswordString: String? = System.getenv("CODEARTIFACT_AUTH_TOKEN")
-if (!caPasswordString.isNullOrBlank()) {
-    caPassword = caPasswordString
-}
-
 repositories {
     mavenCentral()
     mavenLocal()
-    if (caUrl != null && caPassword != null) {
-        maven {
-            name = "CodeArtifact"
-            url = caUrl!!
-            credentials {
-                username = "aws"
-                password = caPassword!!
-            }
-        }
-    }
 }
 
 dependencies {
@@ -70,7 +45,7 @@ dependencies {
     implementation("software.amazon.cryptography:ComAmazonawsDynamodb:1.0-SNAPSHOT")
 
     // Dafny dependencies
-    implementation("org.dafny:DafnyRuntime:${dafnyVersion}")
+    implementation("org.dafny:DafnyRuntime:4.2.0")
     implementation("software.amazon.smithy.dafny:conversion:0.1")
 
     // sdk dependencies
@@ -86,20 +61,6 @@ dependencies {
 }
 
 publishing {
-    publications.create<MavenPublication>("mavenLocal") {
-        groupId = "software.amazon.cryptography"
-        artifactId = "aws-cryptographic-material-providers"
-        artifact(tasks["shadowJar"])
-        artifact(tasks["javadocJar"])
-        artifact(tasks["sourcesJar"])
-
-        // Since we ship the MPL bundled with our generated dependencies they should not be included in the generated pom.xml
-        // however; we also use additional dependencies runtime dependencies that are needed in order to properly run the mpl.
-        // When you bundle a shadow jar you don't need to include any dependencies in the pom.xml since everything is on the jar, but since
-        // we are selective so we have to "manually" write our own pom file.
-        buildPom(this )
-    }
-
     publications.create<MavenPublication>("maven") {
         groupId = "software.amazon.cryptography"
         artifactId = "aws-cryptographic-material-providers"
@@ -114,14 +75,30 @@ publishing {
         buildPom(this)
     }
 
+    // publications.create<MavenPublication>("maven") {
+    //     groupId = "software.amazon.cryptography"
+    //     artifactId = "aws-cryptographic-material-providers"
+    //     artifact(tasks["shadowJar"])
+    //     artifact(tasks["javadocJar"])
+    //     artifact(tasks["sourcesJar"])
+
+    //     // Since we ship the MPL bundled with our generated dependencies they should not be included in the generated pom.xml
+    //     // however; we also use additional dependencies runtime dependencies that are needed in order to properly run the mpl.
+    //     // When you bundle a shadow jar you don't need to include any dependencies in the pom.xml since everything is on the jar, but since
+    //     // we are selective so we have to "manually" write our own pom file.
+    //     buildPom(this)
+    // }
+
     repositories {
         mavenLocal()
-        maven {
-            name = "PublishToCodeArtifactStaging"
-            url = URI.create("https://crypto-tools-internal-587316601012.d.codeartifact.us-east-1.amazonaws.com/maven/java-mpl-staging/")
-            credentials {
-                username = "aws"
-                password = System.getenv("CODEARTIFACT_TOKEN")
+        if (version != "1.0-SNAPSHOT") {
+            maven {
+                name = "PublishToCodeArtifactStaging"
+                url = URI.create("https://crypto-tools-internal-587316601012.d.codeartifact.us-east-1.amazonaws.com/maven/java-mpl-staging/")
+                credentials {
+                    username = "aws"
+                    password = System.getenv("CODEARTIFACT_TOKEN")
+                }
             }
         }
     }
@@ -192,8 +169,9 @@ nexusPublishing {
     }
 }
 
-signing {
-    useGpgCmd()
+if (version != "1.0-SNAPSHOT") {
+    signing {
+        useGpgCmd()
 
     // Dynamically set these properties
     project.ext.set("signing.gnupg.executable", "gpg")
@@ -203,12 +181,11 @@ signing {
     project.ext.set("signing.gnupg.keyName", System.getenv("GPG_KEY"))
     project.ext.set("signing.gnupg.passphrase", System.getenv("GPG_PASS"))
 
-    // Signing is required if building a release version and if we're going to publish it.
-    // Otherwise if doing a maven publication we will sign
-    setRequired({
-        gradle.getTaskGraph().hasTask("publish")
-    })
-    sign(publishing.publications["maven"])
+        // Signing is required if building a release version and if we're going to publish it.
+        // Otherwise if doing a maven publication we will sign
+        setRequired({ gradle.getTaskGraph().hasTask("publish") })
+        sign(publishing.publications["maven"])
+    }
 }
 
 fun SourceDirectorySet.mainSourceSet() {
@@ -224,9 +201,13 @@ tasks.test {
     // This will show System.out.println statements
     testLogging.showStandardStreams = true
 
+    var whatToLog = mutableSetOf(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED, org.gradle.api.tasks.testing.logging.TestLogEvent.SKIPPED)
+    if (project.hasProperty("verboseTesting")) {
+        whatToLog = mutableSetOf(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED, org.gradle.api.tasks.testing.logging.TestLogEvent.PASSED, org.gradle.api.tasks.testing.logging.TestLogEvent.SKIPPED)
+    }
     testLogging {
         lifecycle {
-            events = mutableSetOf(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED, org.gradle.api.tasks.testing.logging.TestLogEvent.PASSED, org.gradle.api.tasks.testing.logging.TestLogEvent.SKIPPED)
+            events = whatToLog
             exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
             showExceptions = true
             showCauses = true

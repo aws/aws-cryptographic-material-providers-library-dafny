@@ -71,6 +71,9 @@ service AwsCryptographicMaterialProviders {
     // Commitment
     ValidateCommitmentPolicyOnEncrypt,
     ValidateCommitmentPolicyOnDecrypt,
+
+    // ACCP
+    GetHKDFProvider,
   ],
   errors: [AwsCryptographicMaterialProvidersException],
 }
@@ -84,4 +87,12 @@ structure MaterialProvidersConfig {}
 structure AwsCryptographicMaterialProvidersException {
   @required
   message: String,
+}
+
+///////////////////
+// ACCP
+operation GetHKDFProvider {
+  input: aws.cryptography.primitives#GetHKDFProviderInput,
+  output: aws.cryptography.primitives#GetHKDFProviderOutput,
+  errors: []
 }

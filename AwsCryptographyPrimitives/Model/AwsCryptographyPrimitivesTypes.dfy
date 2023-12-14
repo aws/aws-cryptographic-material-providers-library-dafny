@@ -43,7 +43,7 @@ module {:extern "software.amazon.cryptography.primitives.internaldafny.types" } 
   datatype AesKdfCtrInput = | AesKdfCtrInput (
     nameonly ikm: seq<uint8> ,
     nameonly expectedLength: PositiveInteger ,
-    nameonly nonce: Option<seq<uint8>>
+    nameonly nonce: Option<seq<uint8>> := Option.None
   )
   class IAwsCryptographicPrimitivesClientCallHistory {
     ghost constructor() {
@@ -64,6 +64,7 @@ module {:extern "software.amazon.cryptography.primitives.internaldafny.types" } 
       GenerateECDSASignatureKey := [];
       ECDSASign := [];
       ECDSAVerify := [];
+      GetHKDFProvider := [];
     }
     ghost var GenerateRandomBytes: seq<DafnyCallEvent<GenerateRandomBytesInput, Result<seq<uint8>, Error>>>
     ghost var Digest: seq<DafnyCallEvent<DigestInput, Result<seq<uint8>, Error>>>
@@ -82,6 +83,7 @@ module {:extern "software.amazon.cryptography.primitives.internaldafny.types" } 
     ghost var GenerateECDSASignatureKey: seq<DafnyCallEvent<GenerateECDSASignatureKeyInput, Result<GenerateECDSASignatureKeyOutput, Error>>>
     ghost var ECDSASign: seq<DafnyCallEvent<ECDSASignInput, Result<seq<uint8>, Error>>>
     ghost var ECDSAVerify: seq<DafnyCallEvent<ECDSAVerifyInput, Result<bool, Error>>>
+    ghost var GetHKDFProvider: seq<DafnyCallEvent<GetHKDFProviderInput, Result<GetHKDFProviderOutput, Error>>>
   }
   trait {:termination false} IAwsCryptographicPrimitivesClient
   {
@@ -347,6 +349,21 @@ module {:extern "software.amazon.cryptography.primitives.internaldafny.types" } 
       ensures ECDSAVerifyEnsuresPublicly(input, output)
       ensures History.ECDSAVerify == old(History.ECDSAVerify) + [DafnyCallEvent(input, output)]
 
+    predicate GetHKDFProviderEnsuresPublicly(input: GetHKDFProviderInput , output: Result<GetHKDFProviderOutput, Error>)
+    // The public method to be called by library consumers
+    method GetHKDFProvider ( input: GetHKDFProviderInput )
+      returns (output: Result<GetHKDFProviderOutput, Error>)
+      requires
+        && ValidState()
+      modifies Modifies - {History} ,
+               History`GetHKDFProvider
+      // Dafny will skip type parameters when generating a default decreases clause.
+      decreases Modifies - {History}
+      ensures
+        && ValidState()
+      ensures GetHKDFProviderEnsuresPublicly(input, output)
+      ensures History.GetHKDFProvider == old(History.GetHKDFProvider) + [DafnyCallEvent(input, output)]
+
   }
   datatype CryptoConfig = | CryptoConfig (
 
@@ -391,6 +408,12 @@ module {:extern "software.amazon.cryptography.primitives.internaldafny.types" } 
     nameonly publicKey: RSAPublicKey ,
     nameonly privateKey: RSAPrivateKey
   )
+  datatype GetHKDFProviderInput = | GetHKDFProviderInput (
+
+                                  )
+  datatype GetHKDFProviderOutput = | GetHKDFProviderOutput (
+    nameonly provider: HKDFProvider
+  )
   datatype GetRSAKeyModulusLengthInput = | GetRSAKeyModulusLengthInput (
     nameonly publicKey: seq<uint8>
   )
@@ -405,16 +428,19 @@ module {:extern "software.amazon.cryptography.primitives.internaldafny.types" } 
   )
   datatype HkdfExtractInput = | HkdfExtractInput (
     nameonly digestAlgorithm: DigestAlgorithm ,
-    nameonly salt: Option<seq<uint8>> ,
+    nameonly salt: Option<seq<uint8>> := Option.None ,
     nameonly ikm: seq<uint8>
   )
   datatype HkdfInput = | HkdfInput (
     nameonly digestAlgorithm: DigestAlgorithm ,
-    nameonly salt: Option<seq<uint8>> ,
+    nameonly salt: Option<seq<uint8>> := Option.None ,
     nameonly ikm: seq<uint8> ,
     nameonly info: seq<uint8> ,
     nameonly expectedLength: PositiveInteger
   )
+  datatype HKDFProvider =
+    | ACCP
+    | MPL
   datatype HMacInput = | HMacInput (
     nameonly digestAlgorithm: DigestAlgorithm ,
     nameonly key: seq<uint8> ,
@@ -424,8 +450,8 @@ module {:extern "software.amazon.cryptography.primitives.internaldafny.types" } 
     nameonly digestAlgorithm: DigestAlgorithm ,
     nameonly ikm: seq<uint8> ,
     nameonly expectedLength: PositiveInteger ,
-    nameonly purpose: Option<seq<uint8>> ,
-    nameonly nonce: Option<seq<uint8>>
+    nameonly purpose: Option<seq<uint8>> := Option.None ,
+    nameonly nonce: Option<seq<uint8>> := Option.None
   )
   type PositiveInteger = x: int32 | IsValid_PositiveInteger(x) witness *
   predicate method IsValid_PositiveInteger(x: int32) {
@@ -519,13 +545,20 @@ abstract module AbstractAwsCryptographyPrimitivesService
   import Operations : AbstractAwsCryptographyPrimitivesOperations
   function method DefaultCryptoConfig(): CryptoConfig
   method AtomicPrimitives(config: CryptoConfig := DefaultCryptoConfig())
-    returns (res: Result<AtomicPrimitivesClient, Error>)
+    returns (res: Result<IAwsCryptographicPrimitivesClient, Error>)
     ensures res.Success? ==>
               && fresh(res.value)
               && fresh(res.value.Modifies)
               && fresh(res.value.History)
               && res.value.ValidState()
 
+  // Helper function for the benefit of native code to create a Success(client) without referring to Dafny internals
+  function method CreateSuccessOfClient(client: IAwsCryptographicPrimitivesClient): Result<IAwsCryptographicPrimitivesClient, Error> {
+    Success(client)
+  } // Helper function for the benefit of native code to create a Failure(error) without referring to Dafny internals
+  function method CreateFailureOfError(error: Error): Result<IAwsCryptographicPrimitivesClient, Error> {
+    Failure(error)
+  }
   class AtomicPrimitivesClient extends IAwsCryptographicPrimitivesClient
   {
     constructor(config: Operations.InternalConfig)
@@ -858,6 +891,26 @@ abstract module AbstractAwsCryptographyPrimitivesService
       History.ECDSAVerify := History.ECDSAVerify + [DafnyCallEvent(input, output)];
     }
 
+    predicate GetHKDFProviderEnsuresPublicly(input: GetHKDFProviderInput , output: Result<GetHKDFProviderOutput, Error>)
+    {Operations.GetHKDFProviderEnsuresPublicly(input, output)}
+    // The public method to be called by library consumers
+    method GetHKDFProvider ( input: GetHKDFProviderInput )
+      returns (output: Result<GetHKDFProviderOutput, Error>)
+      requires
+        && ValidState()
+      modifies Modifies - {History} ,
+               History`GetHKDFProvider
+      // Dafny will skip type parameters when generating a default decreases clause.
+      decreases Modifies - {History}
+      ensures
+        && ValidState()
+      ensures GetHKDFProviderEnsuresPublicly(input, output)
+      ensures History.GetHKDFProvider == old(History.GetHKDFProvider) + [DafnyCallEvent(input, output)]
+    {
+      output := Operations.GetHKDFProvider(config, input);
+      History.GetHKDFProvider := History.GetHKDFProvider + [DafnyCallEvent(input, output)];
+    }
+
   }
 }
 abstract module AbstractAwsCryptographyPrimitivesOperations {
@@ -1124,4 +1177,20 @@ abstract module AbstractAwsCryptographyPrimitivesOperations {
     ensures
       && ValidInternalConfig?(config)
     ensures ECDSAVerifyEnsuresPublicly(input, output)
+
+
+  predicate GetHKDFProviderEnsuresPublicly(input: GetHKDFProviderInput , output: Result<GetHKDFProviderOutput, Error>)
+  // The private method to be refined by the library developer
+
+
+  method GetHKDFProvider ( config: InternalConfig , input: GetHKDFProviderInput )
+    returns (output: Result<GetHKDFProviderOutput, Error>)
+    requires
+      && ValidInternalConfig?(config)
+    modifies ModifiesInternalConfig(config)
+    // Dafny will skip type parameters when generating a default decreases clause.
+    decreases ModifiesInternalConfig(config)
+    ensures
+      && ValidInternalConfig?(config)
+    ensures GetHKDFProviderEnsuresPublicly(input, output)
 }

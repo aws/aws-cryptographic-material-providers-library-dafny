@@ -1,22 +1,15 @@
-import java.io.File
-import java.io.FileInputStream
-import java.util.Properties
-import java.net.URI
-import javax.annotation.Nullable
+// Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
-tasks.wrapper {
-    gradleVersion = "7.6"
-}
+val accpLocalJar: String by project
+val publishedVersion: String by project
 
 plugins {
     `java-library`
     `maven-publish`
+    // OS Detector for Optional ACCP
+    id("com.google.osdetector") version "1.7.0"
 }
-
-var props = Properties().apply {
-    load(FileInputStream(File(rootProject.rootDir, "../../../project.properties")))
-}
-var dafnyVersion = props.getProperty("dafnyVersion")
 
 group = "software.amazon.cryptography"
 version = "1.0-SNAPSHOT"
@@ -34,51 +27,50 @@ java {
     }
 }
 
-var caUrl: URI? = null
-@Nullable
-val caUrlStr: String? = System.getenv("CODEARTIFACT_REPO_URL")
-if (!caUrlStr.isNullOrBlank()) {
-    caUrl = URI.create(caUrlStr)
-}
-
-var caPassword: String? = null
-@Nullable
-val caPasswordString: String? = System.getenv("CODEARTIFACT_TOKEN")
-if (!caPasswordString.isNullOrBlank()) {
-    caPassword = caPasswordString
-}
-
 repositories {
     mavenCentral()
     mavenLocal()
-    if (caUrl != null && caPassword != null) {
-        maven {
-            name = "CodeArtifact"
-            url = caUrl!!
-            credentials {
-                username = "aws"
-                password = caPassword!!
-            }
-        }
-    }
 }
 
 dependencies {
-    implementation("org.dafny:DafnyRuntime:${dafnyVersion}")
+    implementation("org.dafny:DafnyRuntime:4.2.0")
     implementation("software.amazon.smithy.dafny:conversion:0.1")
-    implementation("software.amazon.cryptography:aws-cryptographic-material-providers:1.0.1")
+    implementation("software.amazon.cryptography:aws-cryptographic-material-providers:${
+        if (project.hasProperty("publishedVersion")) publishedVersion else "1.0-SNAPSHOT"}")
     implementation(platform("software.amazon.awssdk:bom:2.19.1"))
     implementation("software.amazon.awssdk:dynamodb")
     implementation("software.amazon.awssdk:dynamodb-enhanced")
     implementation("software.amazon.awssdk:kms")
+    implementation("software.amazon.awssdk:core:2.19.1")
+
+    // ACCP ONLY supports Linux, otherwise you have to build it from source and provide it
+    // https://github.com/corretto/amazon-corretto-crypto-provider/tree/main#compatibility--requirements
+    if (project.hasProperty("accpLocalJar")) {
+        logger.warn("Using ACCP Local Jar.")
+        implementation(files(accpLocalJar)) // Our Code ALWAYS needs ACCP to Compile.
+    } else if (osdetector.os.contains("linux")) {
+        logger.warn("Using ACCP Linux from Maven with Suffix {}.", osdetector.classifier)
+        implementation(
+            "software.amazon.cryptools:AmazonCorrettoCryptoProvider:2.3.0:${osdetector.classifier}")
+        testImplementation(
+            "software.amazon.cryptools:AmazonCorrettoCryptoProvider:2.3.0:${osdetector.classifier}")
+    } else {
+        logger.warn("Using un-supported ACCP. Overriding detected os `${osdetector.os}` to be `linux`.")
+        compileOnly(
+            "software.amazon.cryptools:AmazonCorrettoCryptoProvider:2.3.0:${overrideClassifier()}")
+        testCompileOnly(
+            "software.amazon.cryptools:AmazonCorrettoCryptoProvider:2.3.0:${overrideClassifier()}")
+    }
+}
+
+fun overrideClassifier(): String {
+    if (!osdetector.os.contains("linux")) {
+        return "linux-" + osdetector.arch
+    }
+    return osdetector.classifier
 }
 
 publishing {
-    publications.create<MavenPublication>("mavenLocal") {
-        groupId = group as String?
-        artifactId = description
-        from(components["java"])
-    }
     publications.create<MavenPublication>("maven") {
         groupId = group as String?
         artifactId = description
@@ -100,5 +92,9 @@ tasks.register<JavaExec>("runTests") {
 tasks.register<Copy>("copyKeysJSON") {
     from(layout.projectDirectory.file("../../dafny/TestVectorsAwsCryptographicMaterialProviders/test/keys.json"))
     into(layout.projectDirectory.dir("dafny/TestVectorsAwsCryptographicMaterialProviders/test"))
+}
+
+tasks.wrapper {
+    gradleVersion = "7.6"
 }
 

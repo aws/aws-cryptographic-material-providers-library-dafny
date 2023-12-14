@@ -27,11 +27,39 @@ service AwsCryptographicPrimitives {
     GenerateECDSASignatureKey,
     ECDSASign,
     ECDSAVerify,
+    GetHKDFProvider
   ],
   errors: [AwsCryptographicPrimitivesError]
 }
 
-structure CryptoConfig {}
+
+structure CryptoConfig {
+}
+
+@enum([
+  {
+    name: "ACCP",
+    value: "ACCP",
+  },
+  {
+    name: "MPL",
+    value: "MPL",
+  },
+])
+string HKDFProvider
+
+operation GetHKDFProvider {
+  input: GetHKDFProviderInput,
+  output: GetHKDFProviderOutput,
+  errors: []
+}
+
+structure GetHKDFProviderInput {}
+
+structure GetHKDFProviderOutput {
+  @required
+  provider: HKDFProvider
+}
 
 ///////////////////
 // Errors

@@ -8,14 +8,25 @@ module {:extern "software.amazon.cryptography.primitives.internaldafny" } Aws.Cr
   import Operations = AwsCryptographyPrimitivesOperations
 
   function method DefaultCryptoConfig(): CryptoConfig {
-    CryptoConfig
+    CryptoConfig()
   }
 
   method AtomicPrimitives(config: CryptoConfig)
     returns (res: Result<AtomicPrimitivesClient, Error>)
   {
-    var client := new AtomicPrimitivesClient(Operations.Config);
+    var finalConfig: Operations.Config;
+    var accpInstalled :- CheckForAccp();
+    finalConfig := Operations.Config(
+      hkdfProvider := accpInstalled
+    );
+    var client := new AtomicPrimitivesClient(finalConfig);
     return Success(client);
+  }
+
+  method CheckForAccp()
+    returns (res: Result<HKDFProvider, Error>)
+  {
+    res := Operations.CheckForAccp();
   }
 
   class AtomicPrimitivesClient... {

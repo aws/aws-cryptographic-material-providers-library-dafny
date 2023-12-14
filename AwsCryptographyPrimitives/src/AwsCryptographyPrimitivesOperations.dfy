@@ -10,6 +10,7 @@ include "AESEncryption.dfy"
 include "Digest.dfy"
 include "RSAEncryption.dfy"
 include "Signature.dfy"
+include "ACCP.dfy"
 
 module AwsCryptographyPrimitivesOperations refines AbstractAwsCryptographyPrimitivesOperations {
   import Random
@@ -20,13 +21,22 @@ module AwsCryptographyPrimitivesOperations refines AbstractAwsCryptographyPrimit
   import Signature
   import KdfCtr
   import RSAEncryption
+  import ACCP
 
-  datatype Config = Config
+  datatype Config = Config(
+    hkdfProvider: Types.HKDFProvider
+  )
   type InternalConfig = Config
   predicate ValidInternalConfig?(config: InternalConfig)
   {true}
   function ModifiesInternalConfig(config: InternalConfig) : set<object>
   {{}}
+
+  method CheckForAccp()
+    returns (output: Result<HKDFProvider, Error>)
+  {
+    output := ACCP.ExternCheckForAccp();
+  }
 
   predicate GenerateRandomBytesEnsuresPublicly(input: GenerateRandomBytesInput, output: Result<seq<uint8>, Error>)
   {
@@ -65,7 +75,11 @@ module AwsCryptographyPrimitivesOperations refines AbstractAwsCryptographyPrimit
   method HkdfExtract ( config: InternalConfig,  input: HkdfExtractInput )
     returns (output: Result<seq<uint8>, Error>)
   {
-    output := WrappedHKDF.Extract(input);
+    if (config.hkdfProvider == ACCP) {
+      output := ACCP.Extract(input);
+    } else {
+      output := WrappedHKDF.Extract(input);
+    }
   }
 
   predicate HkdfExpandEnsuresPublicly(input: HkdfExpandInput, output: Result<seq<uint8>, Error>)
@@ -78,7 +92,11 @@ module AwsCryptographyPrimitivesOperations refines AbstractAwsCryptographyPrimit
   method HkdfExpand ( config: InternalConfig,  input: HkdfExpandInput )
     returns (output: Result<seq<uint8>, Error>)
   {
-    output := WrappedHKDF.Expand(input);
+    if (config.hkdfProvider == ACCP) {
+      output := ACCP.Expand(input);
+    } else {
+      output := WrappedHKDF.Expand(input);
+    }
   }
 
   predicate HkdfEnsuresPublicly(input: HkdfInput, output: Result<seq<uint8>, Error>)
@@ -91,7 +109,11 @@ module AwsCryptographyPrimitivesOperations refines AbstractAwsCryptographyPrimit
   method Hkdf ( config: InternalConfig,  input: HkdfInput )
     returns (output: Result<seq<uint8>, Error>)
   {
-    output := WrappedHKDF.Hkdf(input);
+    if (config.hkdfProvider == ACCP) {
+      output := ACCP.Hkdf(input);
+    } else {
+      output := WrappedHKDF.Hkdf(input);
+    }
   }
 
   predicate KdfCounterModeEnsuresPublicly(input: KdfCtrInput, output: Result<seq<uint8>, Error>)
@@ -214,6 +236,17 @@ module AwsCryptographyPrimitivesOperations refines AbstractAwsCryptographyPrimit
       input.verificationKey,
       input.message,
       input.signature
+    );
+  }
+
+  predicate GetHKDFProviderEnsuresPublicly(input: GetHKDFProviderInput , output: Result<GetHKDFProviderOutput, Error>)
+  {true}
+
+  method GetHKDFProvider ( config: InternalConfig , input: GetHKDFProviderInput )
+    returns (output: Result<GetHKDFProviderOutput, Error>)
+  {
+    output := Success(Types.GetHKDFProviderOutput(
+                        provider := config.hkdfProvider)
     );
   }
 }

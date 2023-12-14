@@ -392,6 +392,20 @@ namespace AWS.Cryptography.MaterialProviders.Wrapped
       }
 
     }
+    public Wrappers_Compile._IResult<software.amazon.cryptography.primitives.internaldafny.types._IGetHKDFProviderOutput, software.amazon.cryptography.materialproviders.internaldafny.types._IError> GetHKDFProvider(software.amazon.cryptography.primitives.internaldafny.types._IGetHKDFProviderInput request)
+    {
+      AWS.Cryptography.Primitives.GetHKDFProviderInput unWrappedRequest = TypeConversion.FromDafny_N3_aws__N12_cryptography__N10_primitives__S20_GetHKDFProviderInput(request); try
+      {
+        AWS.Cryptography.Primitives.GetHKDFProviderOutput wrappedResponse =
+        this._impl.GetHKDFProvider(unWrappedRequest);
+        return Wrappers_Compile.Result<software.amazon.cryptography.primitives.internaldafny.types._IGetHKDFProviderOutput, software.amazon.cryptography.materialproviders.internaldafny.types._IError>.create_Success(TypeConversion.ToDafny_N3_aws__N12_cryptography__N10_primitives__S21_GetHKDFProviderOutput(wrappedResponse));
+      }
+      catch (System.Exception ex)
+      {
+        return Wrappers_Compile.Result<software.amazon.cryptography.primitives.internaldafny.types._IGetHKDFProviderOutput, software.amazon.cryptography.materialproviders.internaldafny.types._IError>.create_Failure(this.ConvertError(ex));
+      }
+
+    }
     private software.amazon.cryptography.materialproviders.internaldafny.types._IError ConvertError(System.Exception error)
     {
 
